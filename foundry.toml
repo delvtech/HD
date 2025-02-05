@@ -4,5 +4,6 @@ out = "out"
 libs = ["lib"]
 
 remappings = [
+  'council/=lib/council/contracts',
   'openzeppelin/=lib/openzeppelin-contracts/contracts',
 ]
