@@ -12,6 +12,8 @@ import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 //
 // FIXME: Test this.
 //
+// FIXME: Set the unvested multiplier to 100 in tests.
+//
 /// @title MigrationVestingVault
 /// @notice A migration vault that converts ELFI tokens to HD tokens. Migrated
 ///         tokens are granted with a linear vesting schedule of three months.
@@ -21,7 +23,16 @@ import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 contract MigrationVestingVault is AbstractVestingVault {
     using History for History.HistoricalBalances;
 
-    // The ELFI token to migrate from.
+    /// @dev Thrown when an existing grant is found.
+    error ExistingGrantFound();
+
+    /// @dev Thrown when ELFI transfers fail.
+    error ElfiTransferFailed();
+
+    /// @dev Thrown when there are insufficient HD tokens.
+    error InsufficientHDTokens();
+
+    /// @dev The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
 
     // The conversion rate from ELFI to HD.
@@ -56,20 +67,19 @@ contract MigrationVestingVault is AbstractVestingVault {
     function migrate(uint256 amount, address destination) external {
         // Ensure the destination does not already have an active grant.
         VestingVaultStorage.Grant storage existingGrant = _grants()[destination];
-        require(existingGrant.allocation == 0, "Destination already has grant");
+        if (existingGrant.allocation != 0) revert ExistingGrantFound();
 
         // Transfer ELFI tokens from the caller to this contract.
-        require(
-            elfiToken.transferFrom(msg.sender, address(this), amount),
-            "ELFI transfer failed"
-        );
+        if (!elfiToken.transferFrom(msg.sender, address(this), amount)) {
+            revert ElfiTransferFailed();
+        }
 
         // Calculate the HD token amount to be granted.
         uint256 hdAmount = amount * conversionMultiplier;
 
         // Ensure sufficient HD tokens are available in the unassigned pool.
         Storage.Uint256 storage unassigned = _unassigned();
-        require(unassigned.data >= hdAmount, "Insufficient HD tokens available");
+        if (unassigned.data < hdAmount) revert InsufficientHDTokens();
 
         // Set vesting parameters.
         uint128 startBlock = uint128(block.number);
