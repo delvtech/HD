@@ -7,3 +7,6 @@ remappings = [
   'council/=lib/council/contracts',
   'openzeppelin/=lib/openzeppelin-contracts/contracts',
 ]
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
