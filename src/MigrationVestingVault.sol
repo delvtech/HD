@@ -12,7 +12,11 @@ import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 //
 // FIXME: Test this.
 //
-// FIXME: Set the unvested multiplier to 100 in tests.
+// FIXME: We can retrofit this to pull funds from the treasury instead of needing
+// to be funded directly by the treasury. This would be more flexible since we'll
+// have two migration vaults.
+//
+// FIXME: What should happen to the ELFI? Should it be burned?
 //
 /// @title MigrationVestingVault
 /// @notice A migration vault that converts ELFI tokens to HD tokens. Migrated
@@ -67,7 +71,9 @@ contract MigrationVestingVault is AbstractVestingVault {
     function migrate(uint256 amount, address destination) external {
         // Ensure the destination does not already have an active grant.
         VestingVaultStorage.Grant storage existingGrant = _grants()[destination];
-        if (existingGrant.allocation != 0) revert ExistingGrantFound();
+        if (existingGrant.allocation != 0) {
+            revert ExistingGrantFound();
+        }
 
         // Transfer ELFI tokens from the caller to this contract.
         if (!elfiToken.transferFrom(msg.sender, address(this), amount)) {
@@ -79,13 +85,14 @@ contract MigrationVestingVault is AbstractVestingVault {
 
         // Ensure sufficient HD tokens are available in the unassigned pool.
         Storage.Uint256 storage unassigned = _unassigned();
-        if (unassigned.data < hdAmount) revert InsufficientHDTokens();
+        if (unassigned.data < hdAmount) {
+            revert InsufficientHDTokens();
+        }
 
-        // Set vesting parameters.
+        // Set the vesting parameters. We use the global expiration for all
+        // grants, and the vesting starts immediately.
         uint128 startBlock = uint128(block.number);
-        // Use the global expiration for all grants.
         uint128 expiration = uint128(globalExpiration);
-        // Vesting starts immediately.
         uint128 cliff = startBlock;
 
         // Calculate the initial voting power using the current unvested multiplier.
@@ -109,8 +116,7 @@ contract MigrationVestingVault is AbstractVestingVault {
 
         // Update the destination's voting power.
         History.HistoricalBalances memory votingPower = History.load("votingPower");
-        uint256 currentVotes = votingPower.find(destination, block.number);
-        votingPower.push(destination, currentVotes + initialVotingPower);
+        votingPower.push(destination, initialVotingPower);
         emit VoteChange(destination, destination, int256(uint256(initialVotingPower)));
     }
 }
