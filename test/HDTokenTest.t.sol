@@ -187,14 +187,14 @@ contract HDTokenTest is Test {
                 token.BURNER_ROLE()
             )
         );
-        token.burn(50e18);
+        token.burn(alice, 50e18);
         vm.stopPrank();
     }
 
     /// @dev Ensures burning fails when attempting to burn zero tokens
     function test_burn_failure_zeroAmount() external {
         vm.expectRevert(abi.encodeWithSelector(HDToken.InvalidAmount.selector));
-        token.burn(0);
+        token.burn(alice, 0);
     }
 
     /// @dev Ensures burning fails when attempting to burn more tokens than owned
@@ -219,27 +219,27 @@ contract HDTokenTest is Test {
                 amountToBurn
             )
         );
-        token.burn(amountToBurn);
+        token.burn(alice, amountToBurn);
     }
 
     /// @dev Ensures successful burning operation by authorized burner
     function test_burn_success() external {
-        // Setup: mint tokens to deployer
+        // Setup: mint tokens to alice.
         vm.warp(mintStartTime);
         uint256 mintAmount = 100e18;
         uint256 burnAmount = 60e18;
-        token.mint(deployer, mintAmount);
+        token.mint(alice, mintAmount);
 
         // Record state before burn
         uint256 totalSupplyBefore = token.totalSupply();
-        uint256 balanceBefore = token.balanceOf(deployer);
+        uint256 balanceBefore = token.balanceOf(alice);
 
         // Expect the Transfer event before burning
         vm.expectEmit(true, true, true, true);
-        emit Transfer(deployer, address(0), burnAmount);
+        emit Transfer(alice, address(0), burnAmount);
 
-        // Perform burn
-        token.burn(burnAmount);
+        // The deployer burns tokens from alice.
+        token.burn(alice, burnAmount);
 
         // Verify state changes
         assertEq(
@@ -248,9 +248,9 @@ contract HDTokenTest is Test {
             "Total supply not updated correctly"
         );
         assertEq(
-            token.balanceOf(deployer),
+            token.balanceOf(alice),
             balanceBefore - burnAmount,
-            "Burner balance not updated correctly"
+            "Alice balance not updated correctly"
         );
     }
 

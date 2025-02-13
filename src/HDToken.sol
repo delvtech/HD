@@ -86,8 +86,10 @@ contract HDToken is ERC20, ERC20Permit, AccessControl {
     }
 
     /// @dev Burns tokens from the caller's balance.
+    /// @param _from The address whose tokens are being burned.
     /// @param _amount The amount of tokens to burn.
     function burn(
+        address _from,
         uint256 _amount
     ) external onlyRole(BURNER_ROLE) {
         // Check for valid amount
@@ -96,6 +98,6 @@ contract HDToken is ERC20, ERC20Permit, AccessControl {
         }
 
         // Burn tokens from the caller's balance
-        _burn(msg.sender, _amount);
+        _burn(_from, _amount);
     }
 }
