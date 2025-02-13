@@ -18,6 +18,9 @@ import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 //
 // FIXME: What should happen to the ELFI? Should it be burned?
 //
+// FIXME: We should avoid setting the manager roll. We don't want grants to be
+// revoked.
+//
 /// @title MigrationVestingVault
 /// @notice A migration vault that converts ELFI tokens to HD tokens. Migrated
 ///         tokens are granted with a linear vesting schedule of three months.
@@ -36,6 +39,9 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @dev Thrown when there are insufficient HD tokens.
     error InsufficientHDTokens();
 
+    /// @dev The HD treasury that is funding this migration contract.
+    address public immutable hdTreasury;
+
     /// @dev The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
 
@@ -46,18 +52,22 @@ contract MigrationVestingVault is AbstractVestingVault {
     uint256 public immutable globalExpiration;
 
     /// @notice Constructs the migration vault.
+    /// @param _hdTreasury The HD treasury that is funding this migration
+    ///        contract.
     /// @param _hdToken The ERC20 token to be vested (HD token).
     /// @param _elfiToken The ERC20 token to migrate from (ELFI token).
     /// @param _stale The stale block lag used in voting power calculations.
     /// @param _conversionMultiplier The conversion multiplier from ELFI to HD.
     /// @param _globalExpiration The global expiration block for all grants.
     constructor(
+        address _hdTreasury,
         IERC20 _hdToken,
         IERC20 _elfiToken,
         uint256 _stale,
         uint256 _conversionMultiplier,
         uint256 _globalExpiration
     ) AbstractVestingVault(_hdToken, _stale) {
+        hdTreasury = _hdTreasury;
         elfiToken = _elfiToken;
         conversionMultiplier = _conversionMultiplier;
         globalExpiration = _globalExpiration;
@@ -83,9 +93,8 @@ contract MigrationVestingVault is AbstractVestingVault {
         // Calculate the HD token amount to be granted.
         uint256 hdAmount = amount * conversionMultiplier;
 
-        // Ensure sufficient HD tokens are available in the unassigned pool.
-        Storage.Uint256 storage unassigned = _unassigned();
-        if (unassigned.data < hdAmount) {
+        // Pull the HD tokens from the source.
+        if (!token.transferFrom(hdTreasury, address(this), hdAmount)) {
             revert InsufficientHDTokens();
         }
 
@@ -110,9 +119,6 @@ contract MigrationVestingVault is AbstractVestingVault {
             delegatee: destination,
             range: [uint256(0), uint256(0)]
         });
-
-        // Deduct the granted tokens from the unassigned pool.
-        unassigned.data -= hdAmount;
 
         // Update the destination's voting power.
         History.HistoricalBalances memory votingPower = History.load("votingPower");
