@@ -130,8 +130,8 @@ contract MigrationVestingVaultTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Ensures successful migration with correct grant creation
-    function test_migrate_success() external {
+    /// @dev Ensures successful migration with correct grant creation.
+    function test_migrate_and_claim() external {
         uint256 amount = 100e18;
 
         // Record initial states
@@ -187,7 +187,7 @@ contract MigrationVestingVaultTest is Test {
         assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
         assertEq(votingPowerAfter, votingPowerBefore / 2, "Voting power not updated");
 
-        // The other half of the three months passes..
+        // The other half of the three months passes.
         vm.startPrank(bob);
         vm.roll(vault.globalExpiration());
         vault.claim();
@@ -199,6 +199,133 @@ contract MigrationVestingVaultTest is Test {
         votingPowerAfter = vault.queryVotePower(bob, block.number, "");
         assertEq(bobHDBalanceAfter, amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
         assertEq(vaultHDBalanceAfter, 0, "Bob HD balance not updated");
+        assertEq(votingPowerAfter, 0, "Voting power not updated");
+    }
+
+    /// @dev Ensures that a user can immediately claim half of their HD if they
+    /// migrate one and half months after the vault's time starts.
+    function test_migrate_and_claim_halfway_through() external {
+        uint256 amount = 100e18;
+
+        // Record initial states
+        uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
+        uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
+
+        // Alice migrates some of her ELFI tokens. She sets Bob as the destination
+        // address.
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+        vm.expectEmit(true, true, true, true);
+        emit Transfer(alice, address(vault), amount);
+        vault.migrate(amount, bob);
+        vm.stopPrank();
+
+        // Half of the three months passes and Alice migrates her ELFI.
+        uint256 halfwayBlock = (block.number + vault.globalExpiration()) / 2;
+        vm.roll(halfwayBlock);
+        VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
+        assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
+        assertEq(grant.withdrawn, 0, "Should not have withdrawals");
+        assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
+        assertEq(grant.expiration, vault.globalExpiration(), "Wrong expiration");
+        assertEq(grant.delegatee, bob, "Wrong delegatee");
+
+        // Verify token transfers.
+        assertEq(
+            ELFI.balanceOf(address(vault)),
+            vaultElfiBalanceBefore + amount,
+            "Vault ELFI balance not updated"
+        );
+        assertEq(
+            ELFI.balanceOf(alice),
+            aliceElfiBalanceBefore - amount,
+            "Alice ELFI balance not updated"
+        );
+
+        // Bob can claim half of the tokens immediately.
+        uint256 bobHDBalanceBefore = hdToken.balanceOf(address(bob));
+        uint256 vaultHDBalanceBefore = hdToken.balanceOf(address(vault));
+        uint256 votingPowerBefore = vault.queryVotePower(bob, block.number, "");
+        vm.startPrank(bob);
+        vault.claim();
+
+        // Ensure that Bob received half of the HD grant and that his voting
+        // power was reduced by half.
+        uint256 bobHDBalanceAfter = hdToken.balanceOf(address(bob));
+        uint256 vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
+        uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
+        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
+        assertEq(votingPowerAfter, votingPowerBefore / 2, "Voting power not updated");
+
+        // The other half of the three months passes.
+        vm.startPrank(bob);
+        vm.roll(vault.globalExpiration());
+        vault.claim();
+
+        // Ensure that Bob received the other half of the HD grant and that his
+        // voting power was reduced to zero.
+        bobHDBalanceAfter = hdToken.balanceOf(address(bob));
+        vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
+        votingPowerAfter = vault.queryVotePower(bob, block.number, "");
+        assertEq(bobHDBalanceAfter, amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, 0, "Bob HD balance not updated");
+        assertEq(votingPowerAfter, 0, "Voting power not updated");
+    }
+
+    /// @dev Ensures that a user can immediately claim all of their HD if they
+    /// migrate four months after the vault's time starts.
+    function test_migrate_and_claim_after_expiration() external {
+        uint256 amount = 100e18;
+
+        // Record initial states
+        uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
+        uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
+
+        // Alice migrates some of her ELFI tokens. She sets Bob as the destination
+        // address.
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+        vm.expectEmit(true, true, true, true);
+        emit Transfer(alice, address(vault), amount);
+        vault.migrate(amount, bob);
+        vm.stopPrank();
+
+        // Four months passes and Alice migrates her ELFI.
+        vm.roll(vault.globalExpiration());
+        VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
+        assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
+        assertEq(grant.withdrawn, 0, "Should not have withdrawals");
+        assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
+        assertEq(grant.expiration, vault.globalExpiration(), "Wrong expiration");
+        assertEq(grant.delegatee, bob, "Wrong delegatee");
+
+        // Verify token transfers.
+        assertEq(
+            ELFI.balanceOf(address(vault)),
+            vaultElfiBalanceBefore + amount,
+            "Vault ELFI balance not updated"
+        );
+        assertEq(
+            ELFI.balanceOf(alice),
+            aliceElfiBalanceBefore - amount,
+            "Alice ELFI balance not updated"
+        );
+
+        // Bob can claim all of the tokens immediately.
+        uint256 bobHDBalanceBefore = hdToken.balanceOf(address(bob));
+        uint256 vaultHDBalanceBefore = hdToken.balanceOf(address(vault));
+        uint256 votingPowerBefore = vault.queryVotePower(bob, block.number, "");
+        vm.startPrank(bob);
+        vault.claim();
+
+        // Ensure that Bob received all of the HD grant and that his voting
+        // power was reduced to zero.
+        uint256 bobHDBalanceAfter = hdToken.balanceOf(address(bob));
+        uint256 vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
+        uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
+        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
         assertEq(votingPowerAfter, 0, "Voting power not updated");
     }
 
