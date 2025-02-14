@@ -58,14 +58,16 @@ contract MigrationVestingVaultTest is Test {
         );
 
         // Deploy migration vault
-        uint256 globalExpiration = block.number + (VESTING_DURATION / 12);
+        uint256 startBlock = block.number;
+        uint256 expiration = block.number + (VESTING_DURATION / 12);
         vault = new MigrationVestingVault(
             deployer,
             IERC20(address(hdToken)), // Cast HDToken to IERC20
             ELFI,
             STALE_BLOCKS,
             CONVERSION_MULTIPLIER,
-            globalExpiration
+            startBlock,
+            expiration
         );
         vault.initialize(deployer, deployer);
 
@@ -153,7 +155,7 @@ contract MigrationVestingVaultTest is Test {
         assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
-        assertEq(grant.expiration, vault.globalExpiration(), "Wrong expiration");
+        assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
         assertEq(grant.delegatee, bob, "Wrong delegatee");
 
         // Verify token transfers.
@@ -174,7 +176,7 @@ contract MigrationVestingVaultTest is Test {
         uint256 vaultHDBalanceBefore = hdToken.balanceOf(address(vault));
         uint256 votingPowerBefore = vault.queryVotePower(bob, block.number, "");
         vm.startPrank(bob);
-        uint256 halfwayBlock = (block.number + vault.globalExpiration()) / 2;
+        uint256 halfwayBlock = (block.number + vault.expiration()) / 2;
         vm.roll(halfwayBlock);
         vault.claim();
 
@@ -189,7 +191,7 @@ contract MigrationVestingVaultTest is Test {
 
         // The other half of the three months passes.
         vm.startPrank(bob);
-        vm.roll(vault.globalExpiration());
+        vm.roll(vault.expiration());
         vault.claim();
 
         // Ensure that Bob received the other half of the HD grant and that his
@@ -211,6 +213,10 @@ contract MigrationVestingVaultTest is Test {
         uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
         uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
 
+        // Half of the three months passes and Alice migrates her ELFI.
+        uint256 halfwayBlock = (block.number + vault.expiration()) / 2;
+        vm.roll(halfwayBlock);
+
         // Alice migrates some of her ELFI tokens. She sets Bob as the destination
         // address.
         vm.startPrank(alice);
@@ -219,15 +225,11 @@ contract MigrationVestingVaultTest is Test {
         emit Transfer(alice, address(vault), amount);
         vault.migrate(amount, bob);
         vm.stopPrank();
-
-        // Half of the three months passes and Alice migrates her ELFI.
-        uint256 halfwayBlock = (block.number + vault.globalExpiration()) / 2;
-        vm.roll(halfwayBlock);
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
         assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
-        assertEq(grant.expiration, vault.globalExpiration(), "Wrong expiration");
+        assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
         assertEq(grant.delegatee, bob, "Wrong delegatee");
 
         // Verify token transfers.
@@ -260,7 +262,7 @@ contract MigrationVestingVaultTest is Test {
 
         // The other half of the three months passes.
         vm.startPrank(bob);
-        vm.roll(vault.globalExpiration());
+        vm.roll(vault.expiration());
         vault.claim();
 
         // Ensure that Bob received the other half of the HD grant and that his
@@ -282,6 +284,9 @@ contract MigrationVestingVaultTest is Test {
         uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
         uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
 
+        // Four months passes and Alice migrates her ELFI.
+        vm.roll(vault.expiration());
+
         // Alice migrates some of her ELFI tokens. She sets Bob as the destination
         // address.
         vm.startPrank(alice);
@@ -290,14 +295,11 @@ contract MigrationVestingVaultTest is Test {
         emit Transfer(alice, address(vault), amount);
         vault.migrate(amount, bob);
         vm.stopPrank();
-
-        // Four months passes and Alice migrates her ELFI.
-        vm.roll(vault.globalExpiration());
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
         assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
-        assertEq(grant.expiration, vault.globalExpiration(), "Wrong expiration");
+        assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
         assertEq(grant.delegatee, bob, "Wrong delegatee");
 
         // Verify token transfers.
@@ -315,7 +317,6 @@ contract MigrationVestingVaultTest is Test {
         // Bob can claim all of the tokens immediately.
         uint256 bobHDBalanceBefore = hdToken.balanceOf(address(bob));
         uint256 vaultHDBalanceBefore = hdToken.balanceOf(address(vault));
-        uint256 votingPowerBefore = vault.queryVotePower(bob, block.number, "");
         vm.startPrank(bob);
         vault.claim();
 
@@ -396,7 +397,7 @@ contract MigrationVestingVaultTest is Test {
         vm.stopPrank();
 
         // Move to middle of vesting period
-        uint256 halfwayBlock = (block.number + vault.globalExpiration()) / 2;
+        uint256 halfwayBlock = (block.number + vault.expiration()) / 2;
         vm.roll(halfwayBlock);
 
         // Check voting power is maintained through vesting

@@ -8,24 +8,11 @@ import { VestingVaultStorage } from "council/libraries/VestingVaultStorage.sol";
 import { Storage } from "council/libraries/Storage.sol";
 import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 
-// FIXME: Scrutinize this.
-//
-// FIXME: Test this.
-//
-// FIXME: We can retrofit this to pull funds from the treasury instead of needing
-// to be funded directly by the treasury. This would be more flexible since we'll
-// have two migration vaults.
-//
-// FIXME: What should happen to the ELFI? Should it be burned?
-//
-// FIXME: We should avoid setting the manager roll. We don't want grants to be
-// revoked.
-//
 /// @title MigrationVestingVault
 /// @notice A migration vault that converts ELFI tokens to HD tokens. Migrated
-///         tokens are granted with a linear vesting schedule of three months.
-///         The grant is created at a destination address provided by the
-///         migrator. This contract inherits full voting power tracking from
+///         tokens are granted with a linear vesting schedule. The grant is
+///         created at a destination address provided by the migrator. This
+///         contract inherits full voting power tracking from
 ///         `AbstractVestingVault`.
 contract MigrationVestingVault is AbstractVestingVault {
     using History for History.HistoricalBalances;
@@ -45,11 +32,14 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @dev The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
 
-    // The conversion rate from ELFI to HD.
+    /// @dev The conversion rate from ELFI to HD.
     uint256 public immutable conversionMultiplier;
 
-    // The global expiration block at which all grants fully vest.
-    uint256 public immutable globalExpiration;
+    /// @dev The global start block at which all grants start vesting.
+    uint256 public immutable startBlock;
+
+    /// @dev The global expiration block at which all grants fully vest.
+    uint256 public immutable expiration;
 
     /// @notice Constructs the migration vault.
     /// @param _hdTreasury The HD treasury that is funding this migration
@@ -58,19 +48,22 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @param _elfiToken The ERC20 token to migrate from (ELFI token).
     /// @param _stale The stale block lag used in voting power calculations.
     /// @param _conversionMultiplier The conversion multiplier from ELFI to HD.
-    /// @param _globalExpiration The global expiration block for all grants.
+    /// @param _startBlock The global start block for all grants.
+    /// @param _expiration The global expiration block for all grants.
     constructor(
         address _hdTreasury,
         IERC20 _hdToken,
         IERC20 _elfiToken,
         uint256 _stale,
         uint256 _conversionMultiplier,
-        uint256 _globalExpiration
+        uint256 _startBlock,
+        uint256 _expiration
     ) AbstractVestingVault(_hdToken, _stale) {
         hdTreasury = _hdTreasury;
         elfiToken = _elfiToken;
         conversionMultiplier = _conversionMultiplier;
-        globalExpiration = _globalExpiration;
+        startBlock = _startBlock;
+        expiration = _expiration;
     }
 
     /// @notice Migrates a specified amount of ELFI tokens into a vesting grant of HD tokens.
@@ -98,12 +91,6 @@ contract MigrationVestingVault is AbstractVestingVault {
             revert InsufficientHDTokens();
         }
 
-        // Set the vesting parameters. We use the global expiration for all
-        // grants, and the vesting starts immediately.
-        uint128 startBlock = uint128(block.number);
-        uint128 expiration = uint128(globalExpiration);
-        uint128 cliff = startBlock;
-
         // Calculate the initial voting power using the current unvested multiplier.
         Storage.Uint256 memory unvestedMultiplier = _unvestedMultiplier();
         uint128 initialVotingPower = uint128((hdAmount * uint128(unvestedMultiplier.data)) / 100);
@@ -112,9 +99,9 @@ contract MigrationVestingVault is AbstractVestingVault {
         _grants()[destination] = VestingVaultStorage.Grant({
             allocation: uint128(hdAmount),
             withdrawn: 0,
-            created: startBlock,
-            expiration: expiration,
-            cliff: cliff,
+            created: uint128(startBlock),
+            expiration: uint128(expiration),
+            cliff: uint128(startBlock), // vesting starts immediately
             latestVotingPower: initialVotingPower,
             delegatee: destination,
             range: [uint256(0), uint256(0)]
