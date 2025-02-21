@@ -56,6 +56,10 @@ contract MigrationVestingVault is AbstractVestingVault {
         IERC20 _elfiToken,
         uint256 _stale,
         uint256 _conversionMultiplier,
+        // FIXME: What if this is in the future? What if this is greater than
+        // the expiration? Adjust this so that these things aren't possible. The
+        // simplest solution is to switch to using constants for the time between
+        // the start block and the expiration.
         uint256 _startBlock,
         uint256 _expiration
     ) AbstractVestingVault(_hdToken, _stale) {

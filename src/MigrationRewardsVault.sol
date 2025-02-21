@@ -8,11 +8,6 @@ import { VestingVaultStorage } from "council/libraries/VestingVaultStorage.sol";
 import { Storage } from "council/libraries/Storage.sol";
 import { AbstractVestingVault } from "council/vaults/VestingVault.sol";
 
-// FIXME: Change this.
-//
-// FIXME: Implement the functionality that we want. We need to update the claim
-// function in addition to changing some of the parameters of `migrate`.
-//
 /// @title MigrationRewardsVault
 /// @notice A migration vault that converts ELFI tokens to HD tokens. Migrated
 ///         tokens have a cliff. After this cliff, they will accrue a bonus
@@ -31,8 +26,33 @@ contract MigrationRewardsVault is AbstractVestingVault {
     /// @notice Thrown when there are insufficient HD tokens.
     error InsufficientHDTokens();
 
+    /// @notice Thrown when no tokens are withdrawable during a claim attempt.
+    error NothingToClaim();
+
+    /// @notice Thrown when the HD token transfer to the claimant fails.
+    error TransferFailed();
+
+    /// @notice Thrown when the HD token transfer to the treasury fails.
+    error TreasuryTransferFailed();
+
     /// @notice One in basis points.
-    uint256 public constant ONE_BPS = 10_000;
+    uint256 public constant ONE = 1e18;
+
+    /// @notice The conversion rate from ELFI to HD.
+    uint256 public constant CONVERSION_MULTIPLIER = 10e18;
+
+    /// @notice The bonus multiplier, representing a 5% APR over
+    ///         a three-month cliff period. For a 5% APR over 2 months (0.16
+    ///         years), bonus = 5% * 0.16 which is approximately 0.83%.
+    uint256 public constant BONUS_MULTIPLIER = 1.008333333333333333e18;
+
+    /// @notice The number of blocks between deploying the contract and the
+    ///         vesting cliff.
+    uint256 public constant CLIFF_DURATION = 91 days / 12; // ~3 months
+
+    /// @notice The number of blocks between deploying the contract and the
+    ///         expiration.
+    uint256 public constant EXPIRATION_DURATION = 152 days / 12; // ~5 months
 
     /// @notice The HD treasury that is funding this migration contract.
     address public immutable hdTreasury;
@@ -40,49 +60,37 @@ contract MigrationRewardsVault is AbstractVestingVault {
     /// @notice The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
 
-    /// @notice The conversion rate from ELFI to HD.
-    uint256 public immutable conversionMultiplier;
-
     /// @notice The global start block at which all grants start vesting.
     uint256 public immutable startBlock;
 
-    // FIXME: Rename this to "cliff"
-    //
     /// @notice The global cliff block at which all grants have vested their cliff
     ///      amount.
     uint256 public immutable cliff;
 
-    // FIXME
-    //
     /// @notice The global expiration block at which all grants fully vest.
     uint256 public immutable expiration;
 
-    // FIXME: The bonus multiplier in basis points.
-    uint256 public immutable bonusMultiplier;
-
     /// @notice Constructs the migration vault.
-    /// @param _hdTreasury The HD treasury that is funding this migration
-    ///        contract.
+    /// @param _hdTreasury The HD treasury funding this migration contract.
     /// @param _hdToken The ERC20 token to be vested (HD token).
     /// @param _elfiToken The ERC20 token to migrate from (ELFI token).
-    /// @param _stale The stale block lag used in voting power calculations.
-    /// @param _conversionMultiplier The conversion multiplier from ELFI to HD.
-    /// @param _startBlock The global start block for all grants.
-    /// @param _expiration The global expiration block for all grants.
+    /// @param _stale The stale block lag for voting power calculations.
     constructor(
         address _hdTreasury,
         IERC20 _hdToken,
         IERC20 _elfiToken,
-        uint256 _stale,
-        uint256 _conversionMultiplier,
-        uint256 _startBlock,
-        uint256 _expiration
+        uint256 _stale
     ) AbstractVestingVault(_hdToken, _stale) {
+        // Set immutable variables
         hdTreasury = _hdTreasury;
         elfiToken = _elfiToken;
-        conversionMultiplier = _conversionMultiplier;
-        startBlock = _startBlock;
-        expiration = _expiration;
+
+        // Use deployment block as startBlock.
+        startBlock = block.number;
+
+        // Calculate cliff and expiration based on durations.
+        cliff = block.number + CLIFF_DURATION;
+        expiration = block.number + EXPIRATION_DURATION;
     }
 
     /// @notice Migrates a specified amount of ELFI tokens into a vesting grant
@@ -108,19 +116,19 @@ contract MigrationRewardsVault is AbstractVestingVault {
         }
 
         // Calculate the base HD amount from ELFI conversion.
-        uint256 baseHdAmount = (_amount * conversionMultiplier) / ONE_BPS;
+        uint256 baseHdAmount = (_amount * CONVERSION_MULTIPLIER) / ONE;
         uint256 totalHdAmount;
 
         // Determine the total HD amount based on migration timing.
         if (block.number < cliff) {
             // Full 5% bonus for pre-cliff migrations.
-            totalHdAmount = (baseHdAmount * bonusMultiplier) / ONE_BPS;
+            totalHdAmount = (baseHdAmount * BONUS_MULTIPLIER) / ONE;
         } else if (block.number < expiration) {
             // Reduced bonus for post-cliff, pre-expiration migrations.
             uint256 blocksRemaining = expiration - block.number;
             uint256 bonusPeriod = expiration - cliff;
-            uint256 bonusFactor = ONE_BPS + ((bonusMultiplier - ONE_BPS) * blocksRemaining) / bonusPeriod;
-            totalHdAmount = (baseHdAmount * bonusFactor) / ONE_BPS;
+            uint256 bonusFactor = ONE + ((BONUS_MULTIPLIER - ONE) * blocksRemaining) / bonusPeriod;
+            totalHdAmount = (baseHdAmount * bonusFactor) / ONE;
         } else {
             // No bonus for post-expiration migrations, just base amount.
             totalHdAmount = baseHdAmount;
@@ -149,8 +157,6 @@ contract MigrationRewardsVault is AbstractVestingVault {
         emit VoteChange(_destination, _destination, int256(baseHdAmount));
     }
 
-    // FIXME: Use custom reverts.
-    //
     /// @notice Claims all withdrawable HD tokens from the caller's grant and
     ///         terminates it.
     /// @dev Withdraws the currently withdrawable amount (base plus vested
@@ -163,7 +169,7 @@ contract MigrationRewardsVault is AbstractVestingVault {
         VestingVaultStorage.Grant storage grant = _grants()[msg.sender];
         uint256 withdrawable = _getWithdrawableAmount(grant);
         if (withdrawable == 0) {
-            revert("NothingToClaim");
+            revert NothingToClaim();
         }
 
         // Calculate the unvested amount to return to the treasury.
@@ -171,13 +177,13 @@ contract MigrationRewardsVault is AbstractVestingVault {
 
         // Transfer withdrawable amount to the claimant.
         if (!token.transfer(msg.sender, withdrawable)) {
-            revert("TransferFailed");
+            revert TransferFailed();
         }
 
         // Return any unvested bonus to the treasury.
         if (unvested > 0) {
             if (!token.transfer(hdTreasury, unvested)) {
-                revert("TreasuryTransferFailed");
+                revert TreasuryTransferFailed();
             }
         }
 
@@ -247,16 +253,16 @@ contract MigrationRewardsVault is AbstractVestingVault {
         // Calculate the effective bonus factor based on creation time.
         uint256 effectiveBonusFactor;
         if (_grant.created < cliff) {
-            effectiveBonusFactor = bonusMultiplier; // Full 5% bonus (10,500)
+            effectiveBonusFactor = BONUS_MULTIPLIER; // Full 5% bonus (10,500)
         } else {
             // For late migrators, scale bonus based on remaining blocks to expiration.
             uint256 blocksRemaining = _grant.expiration > _grant.created ? _grant.expiration - _grant.created : 0;
             uint256 bonusPeriod = _grant.expiration - cliff;
-            effectiveBonusFactor = ONE_BPS + ((bonusMultiplier - ONE_BPS) * blocksRemaining) / bonusPeriod;
+            effectiveBonusFactor = ONE + ((BONUS_MULTIPLIER - ONE) * blocksRemaining) / bonusPeriod;
         }
 
         // Derive the base amount using the effective bonus factor.
-        uint256 baseAmount = (_grant.allocation * ONE_BPS) / effectiveBonusFactor;
+        uint256 baseAmount = (_grant.allocation * ONE) / effectiveBonusFactor;
         uint256 maxBonusAmount = _grant.allocation - baseAmount;
 
         // Return full allocation if past expiration.
