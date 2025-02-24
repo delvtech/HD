@@ -18,7 +18,6 @@ contract MigrationVestingVaultTest is Test {
     /// @dev Constants for mainnet contracts and configuration
     uint256 internal constant FORK_BLOCK = 19_000_000;
     uint256 internal constant STALE_BLOCKS = 100;
-    uint256 internal constant CONVERSION_MULTIPLIER = 10;
     address internal constant ELFI_WHALE = 0x6De73946eab234F1EE61256F10067D713aF0e37A;
 
     /// @dev Contract instances
@@ -61,8 +60,7 @@ contract MigrationVestingVaultTest is Test {
             deployer,
             IERC20(address(hdToken)), // Cast HDToken to IERC20
             ELFI,
-            STALE_BLOCKS,
-            CONVERSION_MULTIPLIER
+            STALE_BLOCKS
         );
         vault.initialize(deployer, deployer);
 
@@ -117,7 +115,7 @@ contract MigrationVestingVaultTest is Test {
 
     /// @dev Ensures migration fails when insufficient HD tokens are available
     function test_migrate_failure_insufficientHDTokens() external {
-        uint256 excessiveAmount = hdToken.allowance(deployer, address(vault)) / vault.conversionMultiplier() + 1;
+        uint256 excessiveAmount = hdToken.allowance(deployer, address(vault)) / vault.CONVERSION_MULTIPLIER() + 1;
 
         vm.startPrank(alice);
         ELFI.approve(address(vault), excessiveAmount);
@@ -147,7 +145,7 @@ contract MigrationVestingVaultTest is Test {
 
         // Ensure that the grant was properly configured.
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
-        assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
+        assertEq(grant.allocation, amount * vault.CONVERSION_MULTIPLIER(), "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
         assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
@@ -180,8 +178,8 @@ contract MigrationVestingVaultTest is Test {
         uint256 bobHDBalanceAfter = hdToken.balanceOf(address(bob));
         uint256 vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
         uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
-        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
-        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
+        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * vault.CONVERSION_MULTIPLIER() / 2, "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * vault.CONVERSION_MULTIPLIER() / 2, "Bob HD balance not updated");
         assertEq(votingPowerAfter, votingPowerBefore / 2, "Voting power not updated");
 
         // The other half of the three months passes.
@@ -194,7 +192,7 @@ contract MigrationVestingVaultTest is Test {
         bobHDBalanceAfter = hdToken.balanceOf(address(bob));
         vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
         votingPowerAfter = vault.queryVotePower(bob, block.number, "");
-        assertEq(bobHDBalanceAfter, amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
+        assertEq(bobHDBalanceAfter, amount * vault.CONVERSION_MULTIPLIER(), "Bob HD balance not updated");
         assertEq(vaultHDBalanceAfter, 0, "Bob HD balance not updated");
         assertEq(votingPowerAfter, 0, "Voting power not updated");
     }
@@ -221,7 +219,7 @@ contract MigrationVestingVaultTest is Test {
         vault.migrate(amount, bob);
         vm.stopPrank();
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
-        assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
+        assertEq(grant.allocation, amount * vault.CONVERSION_MULTIPLIER(), "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
         assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
@@ -251,8 +249,8 @@ contract MigrationVestingVaultTest is Test {
         uint256 bobHDBalanceAfter = hdToken.balanceOf(address(bob));
         uint256 vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
         uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
-        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
-        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER / 2, "Bob HD balance not updated");
+        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * vault.CONVERSION_MULTIPLIER() / 2, "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * vault.CONVERSION_MULTIPLIER() / 2, "Bob HD balance not updated");
         assertEq(votingPowerAfter, votingPowerBefore / 2, "Voting power not updated");
 
         // The other half of the three months passes.
@@ -265,7 +263,7 @@ contract MigrationVestingVaultTest is Test {
         bobHDBalanceAfter = hdToken.balanceOf(address(bob));
         vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
         votingPowerAfter = vault.queryVotePower(bob, block.number, "");
-        assertEq(bobHDBalanceAfter, amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
+        assertEq(bobHDBalanceAfter, amount * vault.CONVERSION_MULTIPLIER(), "Bob HD balance not updated");
         assertEq(vaultHDBalanceAfter, 0, "Bob HD balance not updated");
         assertEq(votingPowerAfter, 0, "Voting power not updated");
     }
@@ -291,7 +289,7 @@ contract MigrationVestingVaultTest is Test {
         vault.migrate(amount, bob);
         vm.stopPrank();
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
-        assertEq(grant.allocation, amount * CONVERSION_MULTIPLIER, "Wrong allocation");
+        assertEq(grant.allocation, amount * vault.CONVERSION_MULTIPLIER(), "Wrong allocation");
         assertEq(grant.withdrawn, 0, "Should not have withdrawals");
         assertEq(grant.cliff, grant.created, "Cliff should equal creation block");
         assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
@@ -320,8 +318,8 @@ contract MigrationVestingVaultTest is Test {
         uint256 bobHDBalanceAfter = hdToken.balanceOf(address(bob));
         uint256 vaultHDBalanceAfter = hdToken.balanceOf(address(vault));
         uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
-        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
-        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * CONVERSION_MULTIPLIER, "Bob HD balance not updated");
+        assertEq(bobHDBalanceAfter, bobHDBalanceBefore + amount * vault.CONVERSION_MULTIPLIER(), "Bob HD balance not updated");
+        assertEq(vaultHDBalanceAfter, vaultHDBalanceBefore - amount * vault.CONVERSION_MULTIPLIER(), "Bob HD balance not updated");
         assertEq(votingPowerAfter, 0, "Voting power not updated");
     }
 
@@ -345,7 +343,7 @@ contract MigrationVestingVaultTest is Test {
         uint256 votingPower = vault.queryVotePower(alice, block.number - 1, "");
         assertEq(
             votingPower,
-            amount * CONVERSION_MULTIPLIER,
+            amount * vault.CONVERSION_MULTIPLIER(),
             "Incorrect voting power"
         );
     }
@@ -361,9 +359,9 @@ contract MigrationVestingVaultTest is Test {
 
         // Delegate to bob
         vm.expectEmit(true, true, true, true);
-        emit VoteChange(alice, alice, -int256(uint256(amount * CONVERSION_MULTIPLIER)));
+        emit VoteChange(alice, alice, -int256(uint256(amount * vault.CONVERSION_MULTIPLIER())));
         vm.expectEmit(true, true, true, true);
-        emit VoteChange(bob, alice, int256(uint256(amount * CONVERSION_MULTIPLIER)));
+        emit VoteChange(bob, alice, int256(uint256(amount * vault.CONVERSION_MULTIPLIER())));
         vault.delegate(bob);
         vm.stopPrank();
 
@@ -377,7 +375,7 @@ contract MigrationVestingVaultTest is Test {
         assertEq(aliceVotingPower, 0, "Alice should have no voting power");
         assertEq(
             bobVotingPower,
-            amount * CONVERSION_MULTIPLIER,
+            amount * vault.CONVERSION_MULTIPLIER(),
             "Bob should have Alice's voting power"
         );
     }
@@ -399,7 +397,7 @@ contract MigrationVestingVaultTest is Test {
         uint256 votingPower = vault.queryVotePower(alice, block.number - 1, "");
         assertEq(
             votingPower,
-            amount * CONVERSION_MULTIPLIER,
+            amount * vault.CONVERSION_MULTIPLIER(),
             "Voting power should remain constant"
         );
     }

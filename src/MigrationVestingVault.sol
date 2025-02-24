@@ -26,6 +26,9 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @dev Thrown when there are insufficient HD tokens.
     error InsufficientHDTokens();
 
+    /// @notice The conversion rate from ELFI to HD.
+    uint256 public constant CONVERSION_MULTIPLIER = 10;
+
     /// @notice The number of blocks between deploying the contract and the
     ///         expiration.
     uint256 public constant EXPIRATION_DURATION = 91 days / 12; // ~3 months
@@ -35,9 +38,6 @@ contract MigrationVestingVault is AbstractVestingVault {
 
     /// @dev The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
-
-    /// @dev The conversion rate from ELFI to HD.
-    uint256 public immutable conversionMultiplier;
 
     /// @dev The global start block at which all grants start vesting.
     uint256 public immutable startBlock;
@@ -51,17 +51,14 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @param _hdToken The ERC20 token to be vested (HD token).
     /// @param _elfiToken The ERC20 token to migrate from (ELFI token).
     /// @param _stale The stale block lag used in voting power calculations.
-    /// @param _conversionMultiplier The conversion multiplier from ELFI to HD.
     constructor(
         address _hdTreasury,
         IERC20 _hdToken,
         IERC20 _elfiToken,
-        uint256 _stale,
-        uint256 _conversionMultiplier
+        uint256 _stale
     ) AbstractVestingVault(_hdToken, _stale) {
         hdTreasury = _hdTreasury;
         elfiToken = _elfiToken;
-        conversionMultiplier = _conversionMultiplier;
         startBlock = block.number;
         expiration = startBlock + EXPIRATION_DURATION;
     }
@@ -84,7 +81,7 @@ contract MigrationVestingVault is AbstractVestingVault {
         }
 
         // Calculate the HD token amount to be granted.
-        uint256 hdAmount = amount * conversionMultiplier;
+        uint256 hdAmount = amount * CONVERSION_MULTIPLIER;
 
         // Pull the HD tokens from the source.
         if (!token.transferFrom(hdTreasury, address(this), hdAmount)) {
