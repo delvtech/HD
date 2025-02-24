@@ -19,7 +19,6 @@ contract MigrationVestingVaultTest is Test {
     uint256 internal constant FORK_BLOCK = 19_000_000;
     uint256 internal constant STALE_BLOCKS = 100;
     uint256 internal constant CONVERSION_MULTIPLIER = 10;
-    uint256 internal constant VESTING_DURATION = 90 days;
     address internal constant ELFI_WHALE = 0x6De73946eab234F1EE61256F10067D713aF0e37A;
 
     /// @dev Contract instances
@@ -58,16 +57,12 @@ contract MigrationVestingVaultTest is Test {
         );
 
         // Deploy migration vault
-        uint256 startBlock = block.number;
-        uint256 expiration = block.number + (VESTING_DURATION / 12);
         vault = new MigrationVestingVault(
             deployer,
             IERC20(address(hdToken)), // Cast HDToken to IERC20
             ELFI,
             STALE_BLOCKS,
-            CONVERSION_MULTIPLIER,
-            startBlock,
-            expiration
+            CONVERSION_MULTIPLIER
         );
         vault.initialize(deployer, deployer);
 

@@ -39,7 +39,7 @@ contract MigrationRewardsVault is AbstractVestingVault {
     uint256 public constant ONE = 1e18;
 
     /// @notice The conversion rate from ELFI to HD.
-    uint256 public constant CONVERSION_MULTIPLIER = 10e18;
+    uint256 public constant CONVERSION_MULTIPLIER = 10;
 
     /// @notice The bonus multiplier, representing a 5% APR over
     ///         a three-month cliff period. For a 5% APR over 2 months (0.16
@@ -116,7 +116,7 @@ contract MigrationRewardsVault is AbstractVestingVault {
         }
 
         // Calculate the base HD amount from ELFI conversion.
-        uint256 baseHdAmount = (_amount * CONVERSION_MULTIPLIER) / ONE;
+        uint256 baseHdAmount = _amount * CONVERSION_MULTIPLIER;
         uint256 totalHdAmount;
 
         // Determine the total HD amount based on migration timing.
