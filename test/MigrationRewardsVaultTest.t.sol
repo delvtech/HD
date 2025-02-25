@@ -284,7 +284,7 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(hdToken.balanceOf(address(vault)), vaultHdBalanceBefore + expectedAllocation, "Vault HD balance not updated");
 
         // Move to expiration
-        vm.roll(vault.expiration());
+        vm.roll(vault.expiration() + 1_000);
 
         // Bob claims
         vm.startPrank(bob);
@@ -344,6 +344,10 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(vaultHdBalanceAfter, 0, "Vault HD balance incorrect");
         assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
         assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore + (expectedAllocation - expectedBase), "Treasury balance incorrect");
+
+        // Verify grant is deleted
+        grant = vault.getGrant(bob);
+        assertEq(grant.allocation, 0, "Grant should be deleted");
     }
 
     /// @notice Tests migration post cliff and claiming post expiration.
@@ -375,7 +379,7 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(grant.created, halfwayBlock, "Wrong creation block");
 
         // Bob claims after expiration
-        vm.roll(vault.expiration() + 1_000e18);
+        vm.roll(vault.expiration() + 1_000);
         vm.startPrank(bob);
         vault.claim();
 
@@ -387,6 +391,10 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(vaultHdBalanceAfter, 0, "Vault HD balance incorrect");
         assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
         assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore, "Treasury balance incorrect");
+
+        // Verify grant is deleted
+        grant = vault.getGrant(bob);
+        assertEq(grant.allocation, 0, "Grant should be deleted");
     }
 
     /// @notice Tests migration and full claim after expiration.
@@ -424,6 +432,10 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(vaultHdBalanceAfter, vaultHdBalanceBefore, "Vault HD balance should not decrease beyond base");
         assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
         assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore, "Treasury should receive no bonus post-expiration");
+
+        // Verify grant is deleted
+        grant = vault.getGrant(bob);
+        assertEq(grant.allocation, 0, "Grant should be deleted");
     }
 
     /// @notice Tests claiming without migrating. This should fail.
