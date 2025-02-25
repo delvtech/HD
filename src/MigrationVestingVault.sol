@@ -26,14 +26,24 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @dev Thrown when there are insufficient HD tokens.
     error InsufficientHDTokens();
 
+    /// @notice Thrown when the destination is zero.
+    error InvalidDestination();
+
+    /// @notice Thrown when the migration amount is zero.
+    error InvalidMigrationAmount();
+
+    /// @notice The conversion rate from ELFI to HD.
+    uint256 public constant CONVERSION_MULTIPLIER = 10;
+
+    /// @notice The number of blocks between deploying the contract and the
+    ///         expiration.
+    uint256 public constant EXPIRATION_DURATION = 91 days / 12; // ~3 months
+
     /// @dev The HD treasury that is funding this migration contract.
     address public immutable hdTreasury;
 
     /// @dev The ELFI token to migrate from.
     IERC20 public immutable elfiToken;
-
-    /// @dev The conversion rate from ELFI to HD.
-    uint256 public immutable conversionMultiplier;
 
     /// @dev The global start block at which all grants start vesting.
     uint256 public immutable startBlock;
@@ -47,44 +57,47 @@ contract MigrationVestingVault is AbstractVestingVault {
     /// @param _hdToken The ERC20 token to be vested (HD token).
     /// @param _elfiToken The ERC20 token to migrate from (ELFI token).
     /// @param _stale The stale block lag used in voting power calculations.
-    /// @param _conversionMultiplier The conversion multiplier from ELFI to HD.
-    /// @param _startBlock The global start block for all grants.
-    /// @param _expiration The global expiration block for all grants.
     constructor(
         address _hdTreasury,
         IERC20 _hdToken,
         IERC20 _elfiToken,
-        uint256 _stale,
-        uint256 _conversionMultiplier,
-        uint256 _startBlock,
-        uint256 _expiration
+        uint256 _stale
     ) AbstractVestingVault(_hdToken, _stale) {
         hdTreasury = _hdTreasury;
         elfiToken = _elfiToken;
-        conversionMultiplier = _conversionMultiplier;
-        startBlock = _startBlock;
-        expiration = _expiration;
+        startBlock = block.number;
+        expiration = startBlock + EXPIRATION_DURATION;
     }
 
     /// @notice Migrates a specified amount of ELFI tokens into a vesting grant of HD tokens.
     /// @dev The caller must have approved this contract for the ELFI token amount.
     ///      The destination address must not have an existing grant.
-    /// @param amount The number of tokens to migrate (in ELFI units).
-    /// @param destination The address at which the vesting grant will be created.
-    function migrate(uint256 amount, address destination) external {
+    /// @param _amount The number of tokens to migrate (in ELFI units).
+    /// @param _destination The address at which the vesting grant will be created.
+    function migrate(uint256 _amount, address _destination) external {
+        // If the amount is zero, we shouldn't proceed with the migration.
+        if (_amount == 0) {
+            revert InvalidMigrationAmount();
+        }
+
+        // If the destination is zero, we shouldn't proceed with the migration.
+        if (_destination == address(0)) {
+            revert InvalidDestination();
+        }
+
         // Ensure the destination does not already have an active grant.
-        VestingVaultStorage.Grant storage existingGrant = _grants()[destination];
+        VestingVaultStorage.Grant storage existingGrant = _grants()[_destination];
         if (existingGrant.allocation != 0) {
             revert ExistingGrantFound();
         }
 
         // Transfer ELFI tokens from the caller to this contract.
-        if (!elfiToken.transferFrom(msg.sender, address(this), amount)) {
+        if (!elfiToken.transferFrom(msg.sender, address(this), _amount)) {
             revert ElfiTransferFailed();
         }
 
         // Calculate the HD token amount to be granted.
-        uint256 hdAmount = amount * conversionMultiplier;
+        uint256 hdAmount = _amount * CONVERSION_MULTIPLIER;
 
         // Pull the HD tokens from the source.
         if (!token.transferFrom(hdTreasury, address(this), hdAmount)) {
@@ -96,20 +109,20 @@ contract MigrationVestingVault is AbstractVestingVault {
         uint128 initialVotingPower = uint128((hdAmount * uint128(unvestedMultiplier.data)) / 100);
 
         // Create the grant at the destination address.
-        _grants()[destination] = VestingVaultStorage.Grant({
+        _grants()[_destination] = VestingVaultStorage.Grant({
             allocation: uint128(hdAmount),
             withdrawn: 0,
             created: uint128(startBlock),
             expiration: uint128(expiration),
             cliff: uint128(startBlock), // vesting starts immediately
             latestVotingPower: initialVotingPower,
-            delegatee: destination,
+            delegatee: _destination,
             range: [uint256(0), uint256(0)]
         });
 
         // Update the destination's voting power.
         History.HistoricalBalances memory votingPower = History.load("votingPower");
-        votingPower.push(destination, initialVotingPower);
-        emit VoteChange(destination, destination, int256(uint256(initialVotingPower)));
+        votingPower.push(_destination, initialVotingPower);
+        emit VoteChange(_destination, _destination, int256(uint256(initialVotingPower)));
     }
 }
