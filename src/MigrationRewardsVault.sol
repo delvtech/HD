@@ -26,6 +26,12 @@ contract MigrationRewardsVault is AbstractVestingVault {
     /// @notice Thrown when there are insufficient HD tokens.
     error InsufficientHDTokens();
 
+    /// @notice Thrown when the destination is zero.
+    error InvalidDestination();
+
+    /// @notice Thrown when the migration amount is zero.
+    error InvalidMigrationAmount();
+
     /// @notice Thrown when no tokens are withdrawable during a claim attempt.
     error NothingToClaim();
 
@@ -104,6 +110,16 @@ contract MigrationRewardsVault is AbstractVestingVault {
     /// @param _amount The amount of ELFI tokens to migrate.
     /// @param _destination The address to receive the HD token grant.
     function migrate(uint256 _amount, address _destination) external {
+        // If the amount is zero, we shouldn't proceed with the migration.
+        if (_amount == 0) {
+            revert InvalidMigrationAmount();
+        }
+
+        // If the destination is zero, we shouldn't proceed with the migration.
+        if (_destination == address(0)) {
+            revert InvalidDestination();
+        }
+
         // Prevent duplicate grants at the destination.
         VestingVaultStorage.Grant storage existingGrant = _grants()[_destination];
         if (existingGrant.allocation != 0) {

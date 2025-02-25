@@ -86,6 +86,35 @@ contract MigrationRewardsVaultTest is Test {
     // Migration Tests
     // ==============================
 
+    /// @notice Tests that migration fails with zero migration amount.
+    function test_migrate_failure_zeroAmount() external {
+        // Set up Alice to attempt a migration with zero amount
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), 1e18); // Approve some amount even though we'll send 0
+
+        // Expect the specific error for zero amount
+        vm.expectRevert(MigrationRewardsVault.InvalidMigrationAmount.selector);
+
+        // Attempt migration with zero amount
+        vault.migrate(0, bob);
+        vm.stopPrank();
+    }
+
+    /// @notice Tests that migration fails with zero address destination.
+    function test_migrate_failure_zeroAddressDestination() external {
+        // Set up Alice to attempt a migration to the zero address
+        uint256 amount = 100e18;
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+
+        // Expect the specific error for zero address destination
+        vm.expectRevert(MigrationRewardsVault.InvalidDestination.selector);
+
+        // Attempt migration to address(0)
+        vault.migrate(amount, address(0));
+        vm.stopPrank();
+    }
+
     /// @notice Tests that migration fails if the destination already has a grant.
     function test_migrate_failure_existingGrant() external {
         uint256 amount = 100e18;
