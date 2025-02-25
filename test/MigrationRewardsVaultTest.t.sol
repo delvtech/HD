@@ -147,8 +147,52 @@ contract MigrationRewardsVaultTest is Test {
         vm.stopPrank();
     }
 
+    /// @notice Tests claiming fails before the cliff.
+    function test_migrate_preCliff_and_claim_preCliff_failure() external {
+        uint256 amount = 100e18;
+
+        // Record initial states
+        uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
+        uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
+        uint256 vaultHdBalanceBefore = hdToken.balanceOf(address(vault));
+        uint256 bobHdBalanceBefore = hdToken.balanceOf(bob);
+
+        // Alice migrates ELFI to Bob (pre-cliff)
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+        vm.expectEmit(true, true, true, true);
+        emit Transfer(alice, address(vault), amount);
+        vault.migrate(amount, bob);
+        vm.stopPrank();
+
+        // Verify grant configuration
+        uint256 treasuryHdBalanceBefore = hdToken.balanceOf(vault.hdTreasury());
+        VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
+        uint256 expectedAllocation = (amount * 10 * vault.BONUS_MULTIPLIER()) / vault.ONE();
+        assertEq(grant.allocation, expectedAllocation, "Wrong allocation");
+        assertEq(grant.withdrawn, 0, "Should not have withdrawals");
+        assertEq(grant.created, block.number, "Wrong creation block");
+        assertEq(grant.cliff, vault.cliff(), "Wrong cliff");
+        assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
+        assertEq(grant.delegatee, bob, "Wrong delegatee");
+
+        // Verify token transfers
+        assertEq(ELFI.balanceOf(address(vault)), vaultElfiBalanceBefore + amount, "Vault ELFI balance not updated");
+        assertEq(ELFI.balanceOf(alice), aliceElfiBalanceBefore - amount, "Alice ELFI balance not updated");
+        assertEq(hdToken.balanceOf(address(vault)), vaultHdBalanceBefore + expectedAllocation, "Vault HD balance not updated");
+
+        // Move to halfway between the start block and the cliff.
+        uint256 halfwayBlock = (vault.startBlock() + vault.cliff()) / 2;
+        vm.roll(halfwayBlock);
+
+        // Bob attempts to claim. This should fail
+        vm.startPrank(bob);
+        vm.expectRevert(MigrationRewardsVault.NothingToClaim.selector);
+        vault.claim();
+    }
+
     /// @notice Tests successful migration and claiming for a pre-cliff migrator.
-    function test_migrate_and_claim_preCliff() external {
+    function test_migrate_preCliff_and_claim_preExpiration() external {
         uint256 amount = 100e18;
 
         // Record initial states
@@ -205,8 +249,63 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(grant.allocation, 0, "Grant should be deleted");
     }
 
+    /// @notice Tests successful migration pre cliff and claiming post expiration.
+    function test_migrate_preCliff_and_claim_postExpiration() external {
+        uint256 amount = 100e18;
+
+        // Record initial states
+        uint256 vaultElfiBalanceBefore = ELFI.balanceOf(address(vault));
+        uint256 aliceElfiBalanceBefore = ELFI.balanceOf(alice);
+        uint256 vaultHdBalanceBefore = hdToken.balanceOf(address(vault));
+        uint256 bobHdBalanceBefore = hdToken.balanceOf(bob);
+
+        // Alice migrates ELFI to Bob (pre-cliff)
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+        vm.expectEmit(true, true, true, true);
+        emit Transfer(alice, address(vault), amount);
+        vault.migrate(amount, bob);
+        vm.stopPrank();
+
+        // Verify grant configuration
+        uint256 treasuryHdBalanceBefore = hdToken.balanceOf(vault.hdTreasury());
+        VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
+        uint256 expectedAllocation = (amount * 10 * vault.BONUS_MULTIPLIER()) / vault.ONE();
+        assertEq(grant.allocation, expectedAllocation, "Wrong allocation");
+        assertEq(grant.withdrawn, 0, "Should not have withdrawals");
+        assertEq(grant.created, block.number, "Wrong creation block");
+        assertEq(grant.cliff, vault.cliff(), "Wrong cliff");
+        assertEq(grant.expiration, vault.expiration(), "Wrong expiration");
+        assertEq(grant.delegatee, bob, "Wrong delegatee");
+
+        // Verify token transfers
+        assertEq(ELFI.balanceOf(address(vault)), vaultElfiBalanceBefore + amount, "Vault ELFI balance not updated");
+        assertEq(ELFI.balanceOf(alice), aliceElfiBalanceBefore - amount, "Alice ELFI balance not updated");
+        assertEq(hdToken.balanceOf(address(vault)), vaultHdBalanceBefore + expectedAllocation, "Vault HD balance not updated");
+
+        // Move to expiration
+        vm.roll(vault.expiration());
+
+        // Bob claims
+        vm.startPrank(bob);
+        vault.claim();
+
+        // Verify claim outcomes
+        uint256 bobHdBalanceAfter = hdToken.balanceOf(bob);
+        uint256 vaultHdBalanceAfter = hdToken.balanceOf(address(vault));
+        uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
+        assertEq(bobHdBalanceAfter, bobHdBalanceBefore + expectedAllocation, "Bob HD balance incorrect");
+        assertEq(vaultHdBalanceAfter, 0, "Vault HD balance incorrect");
+        assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
+        assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore, "Treasury should receive unvested bonus");
+
+        // Verify grant is deleted
+        grant = vault.getGrant(bob);
+        assertEq(grant.allocation, 0, "Grant should be deleted");
+    }
+
     /// @notice Tests migration and immediate partial claim for a post-cliff migrator.
-    function test_migrate_and_claim_postCliff_halfway() external {
+    function test_migrate_postCliff_and_claim_preExpiration() external {
         uint256 amount = 100e18;
 
         // Move to halfway between cliff and expiration
@@ -215,7 +314,6 @@ contract MigrationRewardsVaultTest is Test {
 
         // Record initial states
         uint256 bobHdBalanceBefore = hdToken.balanceOf(bob);
-        uint256 treasuryHdBalanceBefore = hdToken.balanceOf(vault.hdTreasury());
 
         // Alice migrates ELFI to Bob (post-cliff)
         vm.startPrank(alice);
@@ -224,6 +322,7 @@ contract MigrationRewardsVaultTest is Test {
         vm.stopPrank();
 
         // Verify grant configuration
+        uint256 treasuryHdBalanceBefore = hdToken.balanceOf(vault.hdTreasury());
         VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
         uint256 blocksRemaining = vault.expiration() - halfwayBlock;
         uint256 bonusPeriod = vault.expiration() - vault.cliff();
@@ -244,11 +343,54 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(bobHdBalanceAfter, bobHdBalanceBefore + expectedBase, "Bob HD balance incorrect");
         assertEq(vaultHdBalanceAfter, 0, "Vault HD balance incorrect");
         assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
-        assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore - expectedBase, "Treasury balance incorrect");
+        assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore + (expectedAllocation - expectedBase), "Treasury balance incorrect");
+    }
+
+    /// @notice Tests migration post cliff and claiming post expiration.
+    function test_migrate_postCliff_and_claim_postExpiration() external {
+        uint256 amount = 100e18;
+
+        // Move to halfway between cliff and expiration
+        uint256 halfwayBlock = vault.cliff() + (vault.expiration() - vault.cliff()) / 2;
+        vm.roll(halfwayBlock);
+
+        // Record initial states
+        uint256 bobHdBalanceBefore = hdToken.balanceOf(bob);
+
+        // Alice migrates ELFI to Bob (post-cliff)
+        vm.startPrank(alice);
+        ELFI.approve(address(vault), amount);
+        vault.migrate(amount, bob);
+        vm.stopPrank();
+
+        // Verify grant configuration
+        uint256 treasuryHdBalanceBefore = hdToken.balanceOf(vault.hdTreasury());
+        VestingVaultStorage.Grant memory grant = vault.getGrant(bob);
+        uint256 blocksRemaining = vault.expiration() - halfwayBlock;
+        uint256 bonusPeriod = vault.expiration() - vault.cliff();
+        uint256 bonusFactor = vault.ONE() + ((vault.BONUS_MULTIPLIER() - vault.ONE()) * blocksRemaining) / bonusPeriod;
+        uint256 expectedBase = amount * 10; // CONVERSION_MULTIPLIER = 10e18
+        uint256 expectedAllocation = (expectedBase * bonusFactor) / vault.ONE();
+        assertEq(grant.allocation, expectedAllocation, "Wrong allocation");
+        assertEq(grant.created, halfwayBlock, "Wrong creation block");
+
+        // Bob claims after expiration
+        vm.roll(vault.expiration() + 1_000e18);
+        vm.startPrank(bob);
+        vault.claim();
+
+        // Verify claim outcomes
+        uint256 bobHdBalanceAfter = hdToken.balanceOf(bob);
+        uint256 vaultHdBalanceAfter = hdToken.balanceOf(address(vault));
+        uint256 votingPowerAfter = vault.queryVotePower(bob, block.number, "");
+        assertEq(bobHdBalanceAfter, bobHdBalanceBefore + expectedAllocation, "Bob HD balance incorrect");
+        assertEq(vaultHdBalanceAfter, 0, "Vault HD balance incorrect");
+        assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
+        assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore, "Treasury balance incorrect");
     }
 
     /// @notice Tests migration and full claim after expiration.
-    function test_migrate_and_claim_postExpiration() external {
+    function test_migrate_postExpiration_and_claim_postExpiration() external {
         uint256 amount = 100e18;
 
         // Move past expiration
@@ -282,6 +424,14 @@ contract MigrationRewardsVaultTest is Test {
         assertEq(vaultHdBalanceAfter, vaultHdBalanceBefore, "Vault HD balance should not decrease beyond base");
         assertEq(votingPowerAfter, 0, "Voting power should be zero after claim");
         assertEq(hdToken.balanceOf(vault.hdTreasury()), treasuryHdBalanceBefore, "Treasury should receive no bonus post-expiration");
+    }
+
+    /// @notice Tests claiming without migrating. This should fail.
+    function test_claim_without_migrating_failure() external {
+        // Bob attempts to claim tokens, but there is nothing to claim.
+        vm.startPrank(bob);
+        vm.expectRevert(MigrationRewardsVault.NothingToClaim.selector);
+        vault.claim();
     }
 
     // ==============================
