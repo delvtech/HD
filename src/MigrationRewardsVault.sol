@@ -47,18 +47,18 @@ contract MigrationRewardsVault is AbstractVestingVault {
     /// @notice The conversion rate from ELFI to HD.
     uint256 public constant CONVERSION_MULTIPLIER = 10;
 
-    /// @notice The bonus multiplier, representing a 5% APR over
-    ///         a three-month cliff period. For a 5% APR over 2 months (0.16
-    ///         years), bonus = 5% * 0.16 which is approximately 0.83%.
-    uint256 public constant BONUS_MULTIPLIER = 1.008333333333333333e18;
+    /// @notice The bonus multiplier, representing a 200% APR over
+    ///         a six-month cliff period. For a 200% APR over 6 months (0.5
+    ///         years), bonus = 200% * 0.5 which is 100%.
+    uint256 public constant BONUS_MULTIPLIER = 2e18;
 
     /// @notice The number of blocks between deploying the contract and the
     ///         vesting cliff.
-    uint256 public constant CLIFF_DURATION = 91 days / 12; // ~3 months
+    uint256 public constant CLIFF_DURATION = 182 days / 12; // ~3 months
 
     /// @notice The number of blocks between deploying the contract and the
     ///         expiration.
-    uint256 public constant EXPIRATION_DURATION = 152 days / 12; // ~5 months
+    uint256 public constant EXPIRATION_DURATION = 365 days / 12; // ~5 months
 
     /// @notice The HD treasury that is funding this migration contract.
     address public immutable hdTreasury;
