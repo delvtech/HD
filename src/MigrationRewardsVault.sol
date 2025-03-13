@@ -54,11 +54,11 @@ contract MigrationRewardsVault is AbstractVestingVault {
 
     /// @notice The number of blocks between deploying the contract and the
     ///         vesting cliff.
-    uint256 public constant CLIFF_DURATION = 182 days / 12; // ~3 months
+    uint256 public constant CLIFF_DURATION = 182 days / 12; // ~6 months
 
     /// @notice The number of blocks between deploying the contract and the
     ///         expiration.
-    uint256 public constant EXPIRATION_DURATION = 365 days / 12; // ~5 months
+    uint256 public constant EXPIRATION_DURATION = 365 days / 12; // 12 months
 
     /// @notice The HD treasury that is funding this migration contract.
     address public immutable hdTreasury;
